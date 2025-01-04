@@ -7,7 +7,8 @@ later adding a fun and interactive GUI. My first goal is to learn the basics of 
 documentation, and other aspects of Rust that I am new to. 
 
 ### Built With
-[![Rust][Rust.rs]][Rust-url]
+* [![Rust][https://www.rust-lang.org/]][Rust-url]
+
 
 
 
