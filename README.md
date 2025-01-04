@@ -14,4 +14,5 @@ documentation, and other aspects of Rust that I am new to.
 
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
+[rust-lang.org]: https://github.com/tandpfun/skill-icons/blob/main/icons/Rust.svg
 [Rust-url]: https://www.rust-lang.org/
