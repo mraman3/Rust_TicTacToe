@@ -7,7 +7,9 @@ later adding a fun and interactive GUI. My first goal is to learn the basics of 
 documentation, and other aspects of Rust that I am new to. 
 
 ### Built With
-* [![Rust][rust-lang.org]][Rust-url]
+[![Rust][rust-lang.org]][Rust-url]
+[![Iroh][Iroh.rs]][Iroh-url]
+
 
 
 
@@ -16,3 +18,5 @@ documentation, and other aspects of Rust that I am new to.
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
 [rust-lang.org]: https://github.com/tandpfun/skill-icons/blob/main/icons/Rust.svg
 [Rust-url]: https://www.rust-lang.org/
+[Iroh.rs]: https://www.iroh.computer/img/logo/iroh-wordmark-purple.svg
+[Iroh-url]: https://www.iroh.computer/
