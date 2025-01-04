@@ -7,10 +7,7 @@ later adding a fun and interactive GUI. My first goal is to learn the basics of 
 
 ### Built With
 [![Rust][rust-lang.org]][Rust-url]
-[![Iroh][Iroh.rs]{
-  width:50px; 
-  height:50px;
-  }][Iroh-url]
+[![Iroh][Iroh.rs]][Iroh-url]
 
 
 
@@ -20,5 +17,8 @@ later adding a fun and interactive GUI. My first goal is to learn the basics of 
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
 [rust-lang.org]: https://github.com/tandpfun/skill-icons/blob/main/icons/Rust.svg
 [Rust-url]: https://www.rust-lang.org/
-[Iroh.rs]: https://www.iroh.computer/img/logo/iroh-wordmark-purple.svg
+[Iroh.rs]{
+  width:50px; 
+  height:50px;
+  }: https://www.iroh.computer/img/logo/iroh-wordmark-purple.svg
 [Iroh-url]: https://www.iroh.computer/
