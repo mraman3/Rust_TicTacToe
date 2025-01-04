@@ -7,8 +7,11 @@ later adding a fun and interactive GUI. My first goal is to learn the basics of 
 documentation, and other aspects of Rust that I am new to. 
 
 ### Built With
-* [![Rust][https://www.rust-lang.org/]][Rust-url]
+* [![Rust][rust-lang.org]][Rust-url]
 
 
 
 
+<!-- MARKDOWN LINKS & IMAGES -->
+<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
+[Rust-url]: https://www.rust-lang.org/
