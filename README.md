@@ -21,12 +21,15 @@ Build
 
 Run
 -----
-    $ cargo run
+The host side will run, which will produce the command for the client to run after the endpoint is created
 
-Test
------------
-    $ cargo test
+    $ cargo run -- host 
+    
+This is an example of what the client-side command will look like 
 
+```
+$ cargo run -- client --node-id 2f0cd88cfa1864242c728c70998092fb6169afd455e1bace1225632658612f09 --addrs "24.150.21.28:59005 192.168.40.5:59005 [2001:1970:564d:ec00:81e:1daa:2c1a:bfd2]:59006 [2001:1970:564d:ec00:6457:77de:ca60:e435]:59006 [2001:1970:564d:ec00:f1be:2e7c:65cb:fab3]:59006"
+```
 
 
 Example Output 
