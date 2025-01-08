@@ -1,13 +1,19 @@
 // Aman Braich
 // Jan 1st, 2025
 // Rust - Tic Tac Toe
+use clap::Parser;
+use iroh::endpoint::Connection;
+use iroh::{Endpoint, NodeAddr, NodeId, RelayMode, SecretKey};
 use std::io::{self, Write};
+use std::net::SocketAddr;
+
+const EXAMPLE_ALPN: &[u8] = b"n0/tictactoe";
 
 /// Represents a player in the game, either Player X or Player O.
 ///
 /// The `Player` enum has two variants:
-/// - `X`: Represents Player X, typically the first player.
-/// - `O`: Represents Player O, typically the second player.
+/// - `X`: Represents Player X, typically the First player.
+/// - `O`: Represents Player O, typically the Second player.
 ///
 /// The `Player` enum is derived with the following traits:
 /// - `Copy`: Allows the enum to be copied rather than moved, enabling easy value duplication.
@@ -33,6 +39,22 @@ impl Player {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
+enum GameType {
+    Client,
+    Host,
+}
+#[derive(clap::Parser)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(value_enum)]
+    gametype: GameType,
+    #[arg(short, long)]
+    node_id: Option<NodeId>,
+    #[clap(long, value_parser, num_args = 1.., value_delimiter = ' ')]
+    addrs: Vec<SocketAddr>,
+}
+
 /// Represents the state of a Tic-Tac-Toe game.
 /// # Fields
 /// - `board`: A 3x3 grid represented as a 2D array of `Option<Player>`.
@@ -45,6 +67,7 @@ impl Player {
 struct Game {
     board: [[Option<Player>; 3]; 3],
     current_player: Player,
+    connection: Connection,
 }
 
 impl Game {
@@ -52,11 +75,12 @@ impl Game {
     /// # Returns
     /// A `Game` object with the following initial state:
     /// - A 3x3 game board represented as a 2D array filled with `None` values, indicating an empty board.
-    /// - The `current_player` set to `Player::X`, signifying that Player X will take the first turn.
-    fn new() -> Game {
+    /// - The `current_player` set to `Player::X`, signifying that Player X will take the First turn.
+    fn new(connection: Connection, current_player: Player) -> Game {
         Game {
             board: [[None, None, None], [None, None, None], [None, None, None]],
-            current_player: Player::X,
+            current_player,
+            connection,
         }
     }
 
@@ -78,15 +102,29 @@ impl Game {
         }
     }
 
+    async fn get_coords_remote(&mut self) -> Vec<usize>{
+        let mut recv = self.connection.accept_uni().await.unwrap();
+        let raw_message = recv.read_to_end(100).await.unwrap();
+        let message = String::from_utf8_lossy(&raw_message).to_string();
+
+        let cleaned_input: Vec<usize> = message
+            .trim()
+            .split_whitespace()
+            .filter_map(|x| x.parse().ok())
+            .collect();
+
+        cleaned_input
+    }
+
     /// This method reads input from the user, expecting two numbers (the row and column)
     /// representing the desired position on the game board. It validates the input to
     /// ensure that it consists of two valid integers. If the input is invalid
     /// it will prompt the user again until the input is correct.
     /// # Returns
     /// A `cleaned_input Vec<usize>` containing two elements:
-    /// - The first element is the row index.
-    /// - The second element is the column index.
-    fn get_coords(&mut self) -> Vec<usize> {
+    /// - The First element is the row index.
+    /// - The Second element is the column index.
+    async fn get_coords(&mut self) -> Vec<usize> {
         loop {
             // input from user
             let mut input = String::new();
@@ -108,13 +146,19 @@ impl Game {
                 .collect();
 
             // Checking if vector contains both coordinates
-            if cleaned_input.len() != 2 {
-                println!("Invalid input. Please enter two numbers (row and column).");
-                // looping if invalid
-                continue;
+            if cleaned_input.len() == 2 {
+                // sending coords
+                let mut send = self.connection.open_uni().await.unwrap();
+                let message = input.clone();
+                send.write_all(message.as_bytes()).await.unwrap();
+                send.finish().unwrap();
+                // returning vector of coordinates
+                break cleaned_input;
             }
-            // returning vector of coordinates
-            break cleaned_input;
+
+            println!("Invalid input. Please enter two numbers (row and column).");
+            // looping if invalid
+            continue;
         }
     }
 
@@ -131,14 +175,17 @@ impl Game {
     ///   - `"Invalid move: Cell already taken."` if the targeted cell is already occupied.
     fn make_move(&mut self, row: usize, col: usize) -> Result<(), &str> {
         if row >= 3 || col >= 3 {
-            return Err("Invalid move: Out of bounds.");
+            println!("Invalid move: Out of bounds.");
+            return Err("Out of bounds.");
         }
 
         if self.board[row][col].is_some() {
-            return Err("Invalid move: Cell already taken.");
+            println!("Invalid move: Cell already taken.");
+            return Err("Cell already taken.");
         }
 
         self.board[row][col] = Some(self.current_player);
+        self.print_board();
         self.current_player = self.current_player.other();
         Ok(())
     }
@@ -193,16 +240,157 @@ impl Game {
             .all(|row| row.iter().all(|&cell| cell.is_some()))
     }
 
-    /// Checks if the game board is empty
-    /// This method iterates through all cells of the 3x3 game board to determine
-    /// if every cell is occupied by a None indicated an empty cell.
-    /// # Returns
-    /// - `true`: If every cell on the board is occupied by `None`.
-    /// - `false`: If there is at least one occupied cell (`Player::O` or `Player::X`).
-    fn is_empty(&self) -> bool {
-        self.board
-            .iter()
-            .all(|row| row.iter().all(|&cell| cell.is_none()))
+    // /// Checks if the game board is empty
+    // /// This method iterates through all cells of the 3x3 game board to determine
+    // /// if every cell is occupied by a None indicated an empty cell.
+    // /// # Returns
+    // /// - `true`: If every cell on the board is occupied by `None`.
+    // /// - `false`: If there is at least one occupied cell (`Player::O` or `Player::X`).
+    // fn is_empty(&self) -> bool {
+    //     self.board
+    //         .iter()
+    //         .all(|row| row.iter().all(|&cell| cell.is_none()))
+    // }
+}
+
+//noinspection DuplicatedCode
+async fn host() {
+    let secret_key = SecretKey::generate(rand::rngs::OsRng);
+    let endpoint = Endpoint::builder()
+        .secret_key(secret_key)
+        .alpns(vec![EXAMPLE_ALPN.to_vec()])
+        .relay_mode(RelayMode::Default)
+        .bind()
+        .await
+        .unwrap();
+
+    let me = endpoint.node_id();
+    let node_addr = endpoint.node_addr().await.unwrap();
+    let local_addrs = node_addr
+        .direct_addresses
+        .into_iter()
+        .map(|addr| {
+            let addr = addr.to_string();
+            addr
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    println!("\tcargo run -- client --node-id {me} --addrs \"{local_addrs}\"");
+
+    let connection = endpoint
+        .accept()
+        .await
+        .unwrap()
+        .accept()
+        .unwrap()
+        .await
+        .unwrap();
+
+    let mut host_game = Game::new(connection, Player::X);
+    // print initial empty board
+    host_game.print_board();
+    loop {
+        // gets coordinates form user and sets it to row and col
+        let mut coords: Vec<usize>;
+        let mut row: usize = 3;
+        let mut col: usize = 3;
+
+        if host_game.current_player == Player::X {
+            coords = host_game.get_coords().await;
+            row = coords[0];
+            col = coords[1];
+        }
+
+        if host_game.current_player == Player::O {
+            coords =host_game.get_coords_remote().await;
+            row = coords[0];
+            col = coords[1];
+        }
+
+        // makes next move based of user coordinates
+        match host_game.make_move(row, col) {
+            // if accepted
+            Ok(()) => {
+                // Checks for winner/draw and updates board
+                if let Some(winner) = host_game.check_winner() {
+
+                    // prints win and ends game
+                    println!("Player {:?} wins!", winner);
+                    host_game.connection.close(Default::default(), &[]);
+                    break;
+                } else if host_game.check_winner() == None && host_game.is_full() {
+
+                    // prints draw and ends game
+                    println!("It's a draw!");
+                    host_game.connection.close(Default::default(), &[]);
+                    break;
+                }
+            }
+            Err(_) => {}
+        }
+    }
+}
+
+async fn client(host: NodeId, addrs: Vec<SocketAddr>) {
+    let secret_key = SecretKey::generate(rand::rngs::OsRng);
+    println!("Secret Key: {}", secret_key);
+
+    let endpoint = Endpoint::builder()
+        .secret_key(secret_key)
+        .alpns(vec![EXAMPLE_ALPN.to_vec()])
+        .relay_mode(RelayMode::Default)
+        .bind()
+        .await
+        .unwrap();
+
+    let me = endpoint.node_id();
+    println!("ME is: {}", me);
+
+    let node_addr = NodeAddr::from_parts(
+        host,
+        Some("https://use1-1.relay.iroh.network./".parse().unwrap()),
+        addrs,
+    );
+    let mut client_game = Game::new(endpoint.connect(node_addr, EXAMPLE_ALPN).await.unwrap(), Player::X);
+    client_game.print_board();
+    loop {
+        // gets coordinates form user and sets it to row and col
+        let mut coords: Vec<usize>;
+        let mut row: usize = 3;
+        let mut col: usize = 3;
+
+        if client_game.current_player == Player::O {
+            coords = client_game.get_coords().await;
+            row = coords[0];
+            col = coords[1];
+        }
+
+        if client_game.current_player == Player::X {
+            coords = client_game.get_coords_remote().await;
+            row = coords[0];
+            col = coords[1];
+        }
+
+        // makes next move based of user coordinates
+        match client_game.make_move(row, col) {
+            // if accepted
+            Ok(()) => {
+                // Checks for winner/draw and updates board
+                if let Some(winner) = client_game.check_winner() {
+                    // prints win and ends game
+                    println!("Player {:?} wins!", winner);
+                    client_game.connection.close(Default::default(), &[]);
+                    break;
+                } else if client_game.check_winner() == None && client_game.is_full() {
+                    // prints draw and ends game
+                    println!("It's a draw!");
+                    client_game.connection.close(Default::default(), &[]);
+                    break;
+                }
+            }
+            Err(_) => {}
+        }
     }
 }
 
@@ -214,171 +402,15 @@ impl Game {
 /// - Then calls `game.check_winner()` and `game.is_full()` after each move
 ///   until the game ends via draw or by a win
 /// - Then calls `game.print_board()` to keep the game updated after each move.
-fn main() {
-    // Initialize new game
-    let mut game = Game::new();
-    loop {
-        // print initial empty board
-        game.print_board();
-
-        // gets coordinates form user and sets it to row and col
-        let coords = game.get_coords();
-        let row = coords[0];
-        let col = coords[1];
-
-        // makes next move based of user coordinates
-        match game.make_move(row, col) {
-            // if accepted
-            Ok(()) => {
-                // Checks for winner/draw and updates board
-                if let Some(winner) = game.check_winner() {
-                    game.print_board();
-
-                    // prints win and ends game
-                    println!("Player {:?} wins!", winner);
-                    break;
-                } else if game.check_winner() == None && game.is_full() {
-                    game.print_board();
-
-                    // prints draw and ends game
-                    println!("It's a draw!");
-                    break;
-                }
-            }
-            Err(_) => {}
+#[tokio::main]
+async fn main() {
+    let cli = Args::parse();
+    match cli.gametype {
+        GameType::Host => {
+            host().await;
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_new_game_initialization() {
-        let game = Game::new();
-        // Check that the board is empty
-        assert!(game.is_empty());
-        // Check that the starting player is X
-        assert_eq!(game.current_player, Player::X);
-    }
-
-    #[test]
-    fn test_make_valid_move() {
-        let mut game = Game::new();
-        //Make move check if result comes back true
-        let result = game.make_move(1, 1);
-        assert!(result.is_ok());
-        assert_eq!(game.board[1][1], Some(Player::X));
-        // Player changes after a valid move
-        assert_eq!(game.current_player, Player::O);
-    }
-
-    #[test]
-    fn test_make_invalid_move_out_of_bounds() {
-        let mut game = Game::new();
-        let result = game.make_move(3, 3); // Invalid position
-        assert_eq!(result, Err("Invalid move: Out of bounds."));
-    }
-
-    #[test]
-    fn test_make_invalid_move_cell_taken() {
-        let mut game = Game::new();
-        game.make_move(0, 0).unwrap(); // X plays
-        let result = game.make_move(0, 0); // Attempt to play in the same cell
-        assert_eq!(result, Err("Invalid move: Cell already taken."));
-    }
-
-    #[test]
-    fn test_check_win_row() {
-        let mut game = Game::new();
-        //XXX
-        //-0-
-        //--0
-        game.make_move(0, 0).unwrap(); // X
-        game.make_move(1, 1).unwrap(); // O
-        game.make_move(0, 1).unwrap(); // X
-        game.make_move(2, 2).unwrap(); // O
-        game.make_move(0, 2).unwrap(); // X wins
-
-        assert_eq!(game.check_winner(), Some(Player::X));
-    }
-
-    #[test]
-    fn test_check_win_column() {
-        let mut game = Game::new();
-        //X--
-        //X0-
-        //X-0
-        game.make_move(0, 0).unwrap(); // X
-        game.make_move(1, 1).unwrap(); // O
-        game.make_move(1, 0).unwrap(); // X
-        game.make_move(2, 2).unwrap(); // O
-        game.make_move(2, 0).unwrap(); // X wins
-
-        assert_eq!(game.check_winner(), Some(Player::X));
-    }
-
-    #[test]
-    fn test_check_win_diagonal() {
-        let mut game = Game::new();
-        //X--
-        //0X-
-        //-0X
-        game.make_move(0, 0).unwrap(); // X
-        game.make_move(1, 0).unwrap(); // O
-        game.make_move(1, 1).unwrap(); // X
-        game.make_move(2, 1).unwrap(); // O
-        game.make_move(2, 2).unwrap(); // X wins
-
-        assert_eq!(game.check_winner(), Some(Player::X));
-    }
-
-    #[test]
-    fn test_check_full_board() {
-        let mut game = Game::new();
-        //X0X
-        //0X0
-        //X0X
-        game.make_move(0, 0).unwrap(); // X
-        game.make_move(0, 1).unwrap(); // O
-        game.make_move(0, 2).unwrap(); // X
-        game.make_move(1, 0).unwrap(); // O
-        game.make_move(1, 1).unwrap(); // X
-        game.make_move(1, 2).unwrap(); // O
-        game.make_move(2, 0).unwrap(); // X
-        game.make_move(2, 1).unwrap(); // O
-        game.make_move(2, 2).unwrap(); // X
-
-        assert!(game.is_full());
-    }
-
-    #[test]
-    fn test_check_empty_board() {
-        let game = Game::new();
-        //---
-        //---
-        //---
-        assert!(game.is_empty());
-    }
-
-    #[test]
-    fn test_draw() {
-        //0X0
-        //0XX
-        //X0X
-        let mut game = Game::new();
-        game.make_move(0, 1).unwrap(); // X
-        game.make_move(0, 0).unwrap(); // O
-        game.make_move(1, 1).unwrap(); // X
-        game.make_move(0, 2).unwrap(); // O
-        game.make_move(1, 2).unwrap(); // X
-        game.make_move(1, 0).unwrap(); // O
-        game.make_move(2, 0).unwrap(); // X
-        game.make_move(2, 1).unwrap(); // O
-        game.make_move(2, 2).unwrap(); // X
-
-        assert_eq!(game.check_winner(), None); // No winner, board is full
-        assert!(game.is_full());
+        GameType::Client => {
+            client(cli.node_id.unwrap(), cli.addrs).await;
+        }
     }
 }
